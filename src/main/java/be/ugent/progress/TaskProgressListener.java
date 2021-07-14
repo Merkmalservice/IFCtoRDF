@@ -22,4 +22,9 @@ public interface TaskProgressListener {
      */
     void notifyFinished(String task);
 
+    /**
+     * Informs the listener that the specified task was aborted or failed.
+     * @param task
+     */
+    void notifyFailed(String task);
 }

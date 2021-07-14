@@ -21,6 +21,11 @@ public abstract class StatefulTaskProgressListener implements TaskProgressListen
         doNotifyFinished(task);
     }
 
+    @Override public void notifyFailed(String task) {
+        updateLatestTaskProgress(task, "failed", 0f);
+        doNotifyFailed(task);
+    }
+
     private void updateLatestTaskProgress(String task, String message, float i) {
         TaskProgress progress = new TaskProgress(task, message, i);
         TaskProgress prev = latestTaskProgress.put(task, progress);
@@ -40,6 +45,15 @@ public abstract class StatefulTaskProgressListener implements TaskProgressListen
     abstract public void doNotifyProgress(String task, String message, float level);
 
     abstract public void doNotifyFinished(String task);
+
+    abstract public void doNotifyFailed(String task);
+
+    /**
+     * Clears the state.
+     */
+    public void reset(){
+        this.latestTaskProgress.clear();
+    }
 
     public static class TaskProgress {
         private String task;

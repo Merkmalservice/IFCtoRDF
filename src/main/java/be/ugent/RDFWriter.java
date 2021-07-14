@@ -15,6 +15,7 @@
  */
 package be.ugent;
 
+import be.ugent.progress.AbortSignal;
 import be.ugent.progress.TaskProgressListener;
 import be.ugent.progress.TaskProgressReporter;
 import com.buildingsmart.tech.ifcowl.ExpressReader;
@@ -57,6 +58,7 @@ import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -100,6 +102,7 @@ public class RDFWriter {
   private static final Logger LOG = LoggerFactory.getLogger(RDFWriter.class);
   private TaskProgressListener progressListener;
   private TaskProgressReporter progressReporter;
+  private AbortSignal abortSignal;
 
   public RDFWriter(OntModel ontModel, File inputFile, String baseURI, Map<String, EntityVO> ent, Map<String, TypeVO> typ, String ontURI) {
     this.ontModel = ontModel;
@@ -119,13 +122,16 @@ public class RDFWriter {
     parseModelToStreamRdf(StreamRDFLib.graph(graph));
   }
 
-  private static StreamRDF synchronizedStreamRDF(StreamRDF delegate) {
+  private StreamRDF synchronizedStreamRDF(StreamRDF delegate) {
     BlockingQueue<Triple> tripleQueue = new ArrayBlockingQueue<>(100);
     AtomicBoolean running = new AtomicBoolean(true);
     Thread tripleHandler = new Thread(() -> {
-      while( !tripleQueue.isEmpty() || running.get() ){
+      while( !tripleQueue.isEmpty() || running.get() && ! abortSignal.isAborted() ){
         try {
-          delegate.triple(tripleQueue.take());
+          Triple t = tripleQueue.poll(100, TimeUnit.MILLISECONDS);
+          if (t != null) {
+            delegate.triple(t);
+          }
         } catch (InterruptedException e) {
           e.printStackTrace();
         }
@@ -141,7 +147,11 @@ public class RDFWriter {
 
       public void triple(Triple triple) {
         synchronized(this) {
-          delegate.triple(triple);
+          try {
+            tripleQueue.put(triple);
+          } catch (InterruptedException e) {
+            throw new RuntimeException("Interrupted while waiting to pass triple to StreamRDF delegate");
+          }
         }
       }
 
@@ -180,17 +190,17 @@ public class RDFWriter {
   private void parseModelToOutputStream() throws IOException {
     try {
       setup();
-      IfcSpfParser parser = new IfcSpfParser(inputFile, removeDuplicates, progressListener);
+      IfcSpfParser parser = new IfcSpfParser(inputFile, removeDuplicates, progressListener, abortSignal);
       // Read the whole file into a linemap Map object
       parser.readModel();
       LOG.info("Model parsed");
-      if (removeDuplicates) {
+      if (removeDuplicates && ! abortSignal.isAborted()) {
         parser.resolveDuplicates();
       }
       // map entries of the linemap Map object to the ontology Model and make
       // new instances in the model
       boolean parsedSuccessfully = parser.mapEntries();
-      if (!parsedSuccessfully)
+      if (!parsedSuccessfully || abortSignal.isAborted())
         return;
       //recover data from parser
       linemap = parser.getLinemap();
@@ -240,6 +250,10 @@ public class RDFWriter {
 
   public void setProgressListener(TaskProgressListener progressListener) {
     this.progressListener = progressListener;
+  }
+
+  public void setAbortSignal(AbortSignal abortSignal) {
+      this.abortSignal = abortSignal;
   }
 
   private static class TypeRemembrance {
@@ -298,10 +312,17 @@ public class RDFWriter {
     } catch (Exception e) {
       e.printStackTrace();
     }
-    progressReporter.finished();
+    if (abortSignal.isAborted()){
+      progressReporter.failed();
+    } else {
+      progressReporter.finished();
+    }
   }
 
   private void generateTriplesForIfcVo(IFCVO ifcLineEntry) {
+    if (this.abortSignal.isAborted()){
+      return;
+    }
     progressReporter.advanceBy(1);
     String typeName = "";
     if (ent.containsKey(ifcLineEntry.getName()))

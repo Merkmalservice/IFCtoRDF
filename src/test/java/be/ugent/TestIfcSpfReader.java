@@ -111,6 +111,10 @@ public class TestIfcSpfReader {
             public void notifyFinished(String task) {
                 logger.debug("{}: {} ({}%)", task, "finished", String.format("%d", 100));
             }
+
+            @Override public void notifyFailed(String task) {
+                logger.debug("{}: {}", task, "failed");
+            }
         });
         reader.convert(file.getAbsolutePath(), StreamRDFLib.sinkTriples(new Sink<Triple>() {
             long size = 0;
