@@ -24,13 +24,10 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Consumer;
 
+import be.ugent.progress.AbortSignal;
 import be.ugent.progress.TaskProgressListener;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.jena.graph.Graph;
@@ -71,6 +68,7 @@ public class IfcSpfReader {
     private Map<String, EntityVO> ent;
     private Map<String, TypeVO> typ;
     private TaskProgressListener progressListener;
+    private AbortSignal abortSignal;
 
     /**
      * Primary integration point for the IFCtoRDF codebase. Run the method
@@ -243,7 +241,14 @@ public class IfcSpfReader {
     }
 
     public void setup(String ifcFileIn, TaskProgressListener progressListener) throws IOException {
+        setup(ifcFileIn, progressListener, null);
+    }
+
+    public void setup(String ifcFileIn, TaskProgressListener progressListener,
+                    AbortSignal abortSignal) throws IOException {
         this.progressListener = progressListener;
+        this.abortSignal = Objects.requireNonNullElseGet(abortSignal, () -> new AbortSignal());
+
         ifcFile = ifcFileIn;
         if (!ifcFile.endsWith(".ifc")) {
             ifcFile += ".ifc";
@@ -341,6 +346,7 @@ public class IfcSpfReader {
         try {
             RDFWriter conv = new RDFWriter(om, new File(ifcFile), baseURI, ent, typ, ontURI);
             conv.setProgressListener(progressListener);
+            conv.setAbortSignal(abortSignal);
             conv.setRemoveDuplicates(removeDuplicates);
             conv.setUseUuidsForGeneratedResources(useUuidsForGeneratedResources);
             conv.setAvoidDuplicatePropertyResources(avoidDuplicatePropertyResources);

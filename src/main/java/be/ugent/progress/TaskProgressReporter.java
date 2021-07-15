@@ -106,6 +106,12 @@ public class TaskProgressReporter {
         }
     }
 
+    public void failed(){
+        if (this.progressListener != null){
+            this.progressListener.notifyFailed(this.taskName);
+        }
+    }
+
     private void adjustStepAndReportIfNewStep() {
         if (isNewstep()) {
             synchronized (this) {

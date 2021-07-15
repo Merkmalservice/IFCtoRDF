@@ -1,5 +1,6 @@
 package be.ugent;
 
+import be.ugent.progress.AbortSignal;
 import be.ugent.progress.TaskProgressListener;
 import be.ugent.progress.TaskProgressReporter;
 import com.buildingsmart.tech.ifcowl.vo.IFCVO;
@@ -25,14 +26,20 @@ public class IfcSpfParser {
     private final Map<Long, IFCVO> linemap = new TreeMap<>();
     private final Map<Long, Long> listOfDuplicateLineEntries = new TreeMap<>();
     private final TaskProgressListener progressListener;
+    private final AbortSignal abortSignal;
 
     private static final Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
-    public IfcSpfParser(File inputFile, boolean resolveDuplicates, TaskProgressListener progressListener)
+    public IfcSpfParser(File inputFile, boolean resolveDuplicates, TaskProgressListener progressListener){
+        this(inputFile, resolveDuplicates, progressListener, new AbortSignal());
+    }
+
+    public IfcSpfParser(File inputFile, boolean resolveDuplicates, TaskProgressListener progressListener, AbortSignal abortSignal)
     {
         this.inputFile = inputFile;
         this.resolveDuplicates = resolveDuplicates;
         this.progressListener = progressListener;
+        this.abortSignal = abortSignal;
     }
 
 
@@ -53,7 +60,7 @@ public class IfcSpfParser {
             try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(inputFile)))) {
                 String strLine;
                 int cnt = 0;
-                while ((strLine = br.readLine()) != null) {
+                while ((strLine = br.readLine()) != null && !abortSignal.isAborted()) {
                     long lineSize = strLine.getBytes().length;
                     progressReporter.advanceBy(lineSize);
                     if (strLine.length() > 0) {
@@ -75,7 +82,11 @@ public class IfcSpfParser {
                     }
                 }
                 progressReporter.finished();
-                LOG.debug("done reading");
+                if (abortSignal.isAborted()) {
+                    LOG.debug("reading aborted");
+                } else {
+                    LOG.debug("done reading");
+                }
             } finally {
                 if (lineNumMax > idCounter) {
                     idCounter = (int) lineNumMax;
@@ -85,7 +96,10 @@ public class IfcSpfParser {
             e.printStackTrace();
         }
         stopWatch.stop();
-        LOG.info("Done reading model in {}", Duration.of(stopWatch.getTime(TimeUnit.NANOSECONDS), ChronoUnit.NANOS));
+        if (!abortSignal.isAborted()) {
+            LOG.info("Done reading model in {}",
+                            Duration.of(stopWatch.getTime(TimeUnit.NANOSECONDS), ChronoUnit.NANOS));
+        }
     }
 
     private void parseIfcLineStatement(String line) {
